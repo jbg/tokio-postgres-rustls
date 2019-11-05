@@ -8,12 +8,13 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-futures = "0.1.28"
-rustls = "0.15.2"
-tokio-io = "0.1.12"
-tokio-postgres = "0.4.0-rc.3"
-tokio-rustls = "0.10.0-alpha.3"
-webpki = "0.19.1"
+rustls = "0.16.0"
+tokio-io = "=0.2.0-alpha.6"
+tokio-postgres = "0.5.0-alpha.1"
+tokio-rustls = { git = "https://github.com/quininer/tokio-rustls", branch = "tokio-0.2"}
+webpki = "0.21.0"
 
 [dev-dependencies]
-tokio = "0.1.21"
+tokio = "0.2.0-alpha.6"
+tokio-test = "0.2.0-alpha.6"
+futures-util-preview = "0.3.0-alpha.19"
