@@ -20,3 +20,7 @@ let connect_fut = tokio_postgres::connect("sslmode=require host=localhost user=p
 
 # License
 tokio-postgres-rustls is distributed under the MIT license.
+
+# Submitting patches
+
+To submit a patch, please familiarise yourself with [mailing list etiquette](https://man.sr.ht/lists.sr.ht/etiquette.md) and the use of [git-send-email](https://man.sr.ht/git.sr.ht/send-email.md) and then send your patch to the [https://lists.sr.ht/~jbg/patches](~jbg/patches mailing list). Please prefix the subject with [PATCH tokio-postgres-rustls].
