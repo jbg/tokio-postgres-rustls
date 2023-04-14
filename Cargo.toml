@@ -9,15 +9,15 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-futures = "0.3"
-ring = "0.16"
-rustls = "0.21"
-tokio = "1"
-tokio-postgres = "0.7"
-tokio-rustls = "0.24"
+futures = { version = "0.3", default-features = false }
+ring = { version = "0.16", default-features = false }
+rustls = { version = "0.21", default-features = false }
+tokio = { version = "1", default-features = false }
+tokio-postgres = { version = "0.7", default-features = false }
+tokio-rustls = { version = "0.24", default-features = false }
 
 [dev-dependencies]
 env_logger = { version = "0.8", default-features = false }
 tokio = { version = "1", features = ["macros", "rt"] }
+tokio-postgres = "0.7"
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
-
