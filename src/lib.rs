@@ -33,9 +33,9 @@ where
 {
     type Stream = RustlsStream<S>;
     type TlsConnect = RustlsConnect;
-    type Error = io::Error;
+    type Error = std::convert::Infallible;
 
-    fn make_tls_connect(&mut self, hostname: &str) -> io::Result<RustlsConnect> {
+    fn make_tls_connect(&mut self, hostname: &str) -> Result<RustlsConnect, Self::Error> {
         ServerName::try_from(hostname)
             .map(|dns_name| {
                 RustlsConnect(Some(RustlsConnectData {
