@@ -10,7 +10,7 @@ use std::{
 use futures::future::{FutureExt, TryFutureExt};
 use ring::digest;
 use rustls::ClientConfig;
-use rustls_pki_types::ServerName;
+use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -136,7 +136,7 @@ mod tests {
         client::danger::{HandshakeSignatureValid, ServerCertVerified},
         Error, SignatureScheme,
     };
-    use rustls_pki_types::{CertificateDer, UnixTime};
+    use rustls::pki_types::{CertificateDer, UnixTime};
 
     #[derive(Debug)]
     struct AcceptAllVerifier {}
