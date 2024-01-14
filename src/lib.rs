@@ -10,12 +10,12 @@ use DigestAlgorithm::{Sha1, Sha256, Sha384, Sha512};
 
 use futures::future::{FutureExt, TryFutureExt};
 use ring::digest;
-use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
+use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
-use x509_certificate::{algorithm, DigestAlgorithm, SignatureAlgorithm, X509Certificate};
+use x509_certificate::{DigestAlgorithm, SignatureAlgorithm, X509Certificate};
 use SignatureAlgorithm::{
     EcdsaSha256, EcdsaSha384, Ed25519, NoSignature, RsaSha1, RsaSha256, RsaSha384, RsaSha512,
 };
@@ -39,21 +39,19 @@ where
 {
     type Stream = RustlsStream<S>;
     type TlsConnect = RustlsConnect;
-    type Error = io::Error;
+    type Error = rustls::pki_types::InvalidDnsNameError;
 
-    fn make_tls_connect(&mut self, hostname: &str) -> io::Result<RustlsConnect> {
-        ServerName::try_from(hostname)
-            .map(|dns_name| {
-                RustlsConnect(Some(RustlsConnectData {
-                    hostname: dns_name.to_owned(),
-                    connector: Arc::clone(&self.config).into(),
-                }))
+    fn make_tls_connect(&mut self, hostname: &str) -> Result<RustlsConnect, Self::Error> {
+        ServerName::try_from(hostname).map(|dns_name| {
+            RustlsConnect(RustlsConnectData {
+                hostname: dns_name.to_owned(),
+                connector: Arc::clone(&self.config).into(),
             })
-            .or(Ok(RustlsConnect(None)))
+        })
     }
 }
 
-pub struct RustlsConnect(Option<RustlsConnectData>);
+pub struct RustlsConnect(RustlsConnectData);
 
 struct RustlsConnectData {
     hostname: ServerName<'static>,
@@ -69,14 +67,11 @@ where
     type Future = Pin<Box<dyn Future<Output = io::Result<RustlsStream<S>>> + Send>>;
 
     fn connect(self, stream: S) -> Self::Future {
-        match self.0 {
-            None => Box::pin(core::future::ready(Err(io::ErrorKind::InvalidInput.into()))),
-            Some(c) => c
-                .connector
-                .connect(c.hostname, stream)
-                .map_ok(|s| RustlsStream(Box::pin(s)))
-                .boxed(),
-        }
+        self.0
+            .connector
+            .connect(self.0.hostname, stream)
+            .map_ok(|s| RustlsStream(Box::pin(s)))
+            .boxed()
     }
 }
 
@@ -152,12 +147,12 @@ where
 mod tests {
     use super::*;
     use futures::future::TryFutureExt;
+    use rustls::pki_types::{CertificateDer, UnixTime};
     use rustls::{
         client::danger::ServerCertVerifier,
         client::danger::{HandshakeSignatureValid, ServerCertVerified},
         Error, SignatureScheme,
     };
-    use rustls::pki_types::{CertificateDer, UnixTime};
 
     #[derive(Debug)]
     struct AcceptAllVerifier {}
