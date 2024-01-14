@@ -15,6 +15,7 @@ rustls = { version = "0.22.1", default-features = false }
 tokio = { version = "1", default-features = false }
 tokio-postgres = { version = "0.7", default-features = false }
 tokio-rustls = { version = "0.25", default-features = false }
+x509-certificate = {version = "0.21.0", default-features = false }
 
 [dev-dependencies]
 env_logger = { version = "0.8", default-features = false }
