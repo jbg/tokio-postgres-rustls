@@ -15,7 +15,7 @@ use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
-use x509_certificate::{algorithm, DigestAlgorithm, SignatureAlgorithm, X509Certificate};
+use x509_certificate::{DigestAlgorithm, SignatureAlgorithm, X509Certificate};
 use SignatureAlgorithm::{
     EcdsaSha256, EcdsaSha384, Ed25519, NoSignature, RsaSha1, RsaSha256, RsaSha384, RsaSha512,
 };
