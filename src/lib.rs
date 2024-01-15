@@ -8,10 +8,9 @@ use std::{
 };
 use DigestAlgorithm::{Sha1, Sha256, Sha384, Sha512};
 
-use futures::future::{FutureExt, TryFutureExt};
 use ring::digest;
-use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
+use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -71,11 +70,12 @@ where
     fn connect(self, stream: S) -> Self::Future {
         match self.0 {
             None => Box::pin(core::future::ready(Err(io::ErrorKind::InvalidInput.into()))),
-            Some(c) => c
-                .connector
-                .connect(c.hostname, stream)
-                .map_ok(|s| RustlsStream(Box::pin(s)))
-                .boxed(),
+            Some(c) => Box::pin(async move {
+                c.connector
+                    .connect(c.hostname, stream)
+                    .await
+                    .map(|s| RustlsStream(Box::pin(s)))
+            }),
         }
     }
 }
@@ -151,13 +151,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::future::TryFutureExt;
+    use rustls::pki_types::{CertificateDer, UnixTime};
     use rustls::{
         client::danger::ServerCertVerifier,
         client::danger::{HandshakeSignatureValid, ServerCertVerified},
         Error, SignatureScheme,
     };
-    use rustls::pki_types::{CertificateDer, UnixTime};
 
     #[derive(Debug)]
     struct AcceptAllVerifier {}
@@ -220,7 +219,7 @@ mod tests {
         )
         .await
         .expect("connect");
-        tokio::spawn(conn.map_err(|e| panic!("{:?}", e)));
+        tokio::spawn(async move { conn.await.map_err(|e| panic!("{:?}", e)) });
         let stmt = client.prepare("SELECT 1").await.expect("prepare");
         let _ = client.query(&stmt, &[]).await.expect("query");
     }
