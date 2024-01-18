@@ -38,21 +38,19 @@ where
 {
     type Stream = RustlsStream<S>;
     type TlsConnect = RustlsConnect;
-    type Error = io::Error;
+    type Error = rustls::pki_types::InvalidDnsNameError;
 
-    fn make_tls_connect(&mut self, hostname: &str) -> io::Result<RustlsConnect> {
-        ServerName::try_from(hostname)
-            .map(|dns_name| {
-                RustlsConnect(Some(RustlsConnectData {
-                    hostname: dns_name.to_owned(),
-                    connector: Arc::clone(&self.config).into(),
-                }))
+    fn make_tls_connect(&mut self, hostname: &str) -> Result<RustlsConnect, Self::Error> {
+        ServerName::try_from(hostname).map(|dns_name| {
+            RustlsConnect(RustlsConnectData {
+                hostname: dns_name.to_owned(),
+                connector: Arc::clone(&self.config).into(),
             })
-            .or(Ok(RustlsConnect(None)))
+        })
     }
 }
 
-pub struct RustlsConnect(Option<RustlsConnectData>);
+pub struct RustlsConnect(RustlsConnectData);
 
 struct RustlsConnectData {
     hostname: ServerName<'static>,
@@ -68,15 +66,13 @@ where
     type Future = Pin<Box<dyn Future<Output = io::Result<RustlsStream<S>>> + Send>>;
 
     fn connect(self, stream: S) -> Self::Future {
-        match self.0 {
-            None => Box::pin(core::future::ready(Err(io::ErrorKind::InvalidInput.into()))),
-            Some(c) => Box::pin(async move {
-                c.connector
-                    .connect(c.hostname, stream)
-                    .await
-                    .map(|s| RustlsStream(Box::pin(s)))
-            }),
-        }
+        Box::pin(async move {
+            self.0
+                .connector
+                .connect(self.0.hostname, stream)
+                .await
+                .map(|s| RustlsStream(Box::pin(s)))
+        })
     }
 }
 
