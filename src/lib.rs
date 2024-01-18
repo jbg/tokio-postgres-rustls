@@ -8,7 +8,6 @@ use std::{
 };
 use DigestAlgorithm::{Sha1, Sha256, Sha384, Sha512};
 
-use futures::future::{FutureExt, TryFutureExt};
 use ring::digest;
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
@@ -67,11 +66,13 @@ where
     type Future = Pin<Box<dyn Future<Output = io::Result<RustlsStream<S>>> + Send>>;
 
     fn connect(self, stream: S) -> Self::Future {
-        self.0
-            .connector
-            .connect(self.0.hostname, stream)
-            .map_ok(|s| RustlsStream(Box::pin(s)))
-            .boxed()
+        Box::pin(async move {
+            self.0
+                .connector
+                .connect(self.0.hostname, stream)
+                .await
+                .map(|s| RustlsStream(Box::pin(s)))
+        })
     }
 }
 
@@ -146,7 +147,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::future::TryFutureExt;
     use rustls::pki_types::{CertificateDer, UnixTime};
     use rustls::{
         client::danger::ServerCertVerifier,
@@ -215,7 +215,7 @@ mod tests {
         )
         .await
         .expect("connect");
-        tokio::spawn(conn.map_err(|e| panic!("{:?}", e)));
+        tokio::spawn(async move { conn.await.map_err(|e| panic!("{:?}", e)) });
         let stmt = client.prepare("SELECT 1").await.expect("prepare");
         let _ = client.query(&stmt, &[]).await.expect("query");
     }
