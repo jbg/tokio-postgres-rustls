@@ -6,18 +6,22 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use DigestAlgorithm::{Sha1, Sha256, Sha384, Sha512};
 
+use const_oid::db::{
+    rfc5912::{
+        ECDSA_WITH_SHA_256, ECDSA_WITH_SHA_384, ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512,
+        SHA_1_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION,
+        SHA_512_WITH_RSA_ENCRYPTION,
+    },
+    rfc8410::ID_ED_25519,
+};
 use ring::digest;
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
-use x509_certificate::{DigestAlgorithm, SignatureAlgorithm, X509Certificate};
-use SignatureAlgorithm::{
-    EcdsaSha256, EcdsaSha384, Ed25519, NoSignature, RsaSha1, RsaSha256, RsaSha384, RsaSha512,
-};
+use x509_cert::{der::Decode, TbsCertificate};
 
 #[derive(Clone)]
 pub struct MakeRustlsConnect {
@@ -85,20 +89,21 @@ where
     fn channel_binding(&self) -> ChannelBinding {
         let (_, session) = self.0.get_ref();
         match session.peer_certificates() {
-            Some(certs) if !certs.is_empty() => X509Certificate::from_der(&certs[0])
+            Some(certs) if !certs.is_empty() => TbsCertificate::from_der(&certs[0])
                 .ok()
-                .and_then(|cert| cert.signature_algorithm())
+                .map(|cert| cert.signature.oid)
                 .map(|algorithm| match algorithm {
                     // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
-                    RsaSha1 | RsaSha256 | EcdsaSha256 => &digest::SHA256,
-                    RsaSha384 | EcdsaSha384 => &digest::SHA384,
-                    RsaSha512 => &digest::SHA512,
-                    Ed25519 => &digest::SHA512,
-                    NoSignature(algo) => match algo {
-                        Sha1 | Sha256 => &digest::SHA256,
-                        Sha384 => &digest::SHA384,
-                        Sha512 => &digest::SHA512,
-                    },
+                    ID_SHA_1
+                    | ID_SHA_256
+                    | SHA_1_WITH_RSA_ENCRYPTION
+                    | SHA_256_WITH_RSA_ENCRYPTION
+                    | ECDSA_WITH_SHA_256 => &digest::SHA256,
+                    ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
+                        &digest::SHA384
+                    }
+                    ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => &digest::SHA512,
+                    _ => unreachable!(),
                 })
                 .map(|algorithm| {
                     let hash = digest::digest(algorithm, certs[0].as_ref());
