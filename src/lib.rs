@@ -91,19 +91,22 @@ where
         match session.peer_certificates() {
             Some(certs) if !certs.is_empty() => TbsCertificate::from_der(&certs[0])
                 .ok()
-                .map(|cert| cert.signature.oid)
-                .map(|algorithm| match algorithm {
-                    // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
-                    ID_SHA_1
-                    | ID_SHA_256
-                    | SHA_1_WITH_RSA_ENCRYPTION
-                    | SHA_256_WITH_RSA_ENCRYPTION
-                    | ECDSA_WITH_SHA_256 => &digest::SHA256,
-                    ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
-                        &digest::SHA384
-                    }
-                    ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => &digest::SHA512,
-                    _ => unreachable!(),
+                .and_then(|cert| {
+                    let digest = match cert.signature.oid {
+                        // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
+                        ID_SHA_1
+                        | ID_SHA_256
+                        | SHA_1_WITH_RSA_ENCRYPTION
+                        | SHA_256_WITH_RSA_ENCRYPTION
+                        | ECDSA_WITH_SHA_256 => &digest::SHA256,
+                        ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
+                            &digest::SHA384
+                        }
+                        ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => &digest::SHA512,
+                        _ => return None,
+                    };
+
+                    Some(digest)
                 })
                 .map(|algorithm| {
                     let hash = digest::digest(algorithm, certs[0].as_ref());
