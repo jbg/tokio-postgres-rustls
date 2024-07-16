@@ -8,7 +8,11 @@ use std::{
 };
 use DigestAlgorithm::{Sha1, Sha256, Sha384, Sha512};
 
+#[cfg(feature = "aws-lc-rs")]
+use aws_lc_rs::digest;
+#[cfg(feature = "ring")]
 use ring::digest;
+
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -144,7 +148,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test))]
 mod tests {
     use super::*;
     use rustls::pki_types::{CertificateDer, UnixTime};
