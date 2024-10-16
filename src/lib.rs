@@ -23,24 +23,20 @@ use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use x509_cert::{der::Decode, TbsCertificate};
 
-mod private {
-    use super::*;
+pub struct RustlsConnectFuture<S> {
+    inner: tokio_rustls::Connect<S>,
+}
 
-    pub struct TlsConnectFuture<S> {
-        pub inner: tokio_rustls::Connect<S>,
-    }
+impl<S> Future for RustlsConnectFuture<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    type Output = io::Result<RustlsStream<S>>;
 
-    impl<S> Future for TlsConnectFuture<S>
-    where
-        S: AsyncRead + AsyncWrite + Unpin,
-    {
-        type Output = io::Result<RustlsStream<S>>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-            // SAFETY: If `self` is pinned, so is `inner`.
-            let fut = unsafe { self.map_unchecked_mut(|this| &mut this.inner) };
-            fut.poll(cx).map_ok(RustlsStream)
-        }
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        // SAFETY: If `self` is pinned, so is `inner`.
+        let fut = unsafe { self.map_unchecked_mut(|this| &mut this.inner) };
+        fut.poll(cx).map_ok(RustlsStream)
     }
 }
 
@@ -88,10 +84,10 @@ where
 {
     type Stream = RustlsStream<S>;
     type Error = io::Error;
-    type Future = private::TlsConnectFuture<S>;
+    type Future = RustlsConnectFuture<S>;
 
     fn connect(self, stream: S) -> Self::Future {
-        private::TlsConnectFuture {
+        RustlsConnectFuture {
             inner: self.0.connector.connect(self.0.hostname, stream),
         }
     }
@@ -100,7 +96,7 @@ where
 pub struct RustlsStream<S>(TlsStream<S>);
 
 impl<S> RustlsStream<S> {
-    pub fn project_stream(self: Pin<&mut Self>) -> Pin<&mut TlsStream<S>> {
+    fn project_stream(self: Pin<&mut Self>) -> Pin<&mut TlsStream<S>> {
         // SAFETY: When `Self` is pinned, so is the inner `TlsStream`.
         unsafe { self.map_unchecked_mut(|this| &mut this.0) }
     }
