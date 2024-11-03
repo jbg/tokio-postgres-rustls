@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![forbid(rust_2018_idioms)]
-#![deny(missing_docs, unsafe_code)]
+#![forbid(missing_docs, unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
 
 use std::{convert::TryFrom, sync::Arc};
