@@ -11,23 +11,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Cache Postgres Image
-        uses: actions/cache@v3
+        id: cache-postgres-image
+        uses: actions/cache@v4
         with:
           path: /tmp/postgres-17.tar
           key: postgres-17-${{ runner.os }}
-      - name: Pull Postgres 17 (if cache miss)
+      - name: Pull and Save Postgres 17 (if cache miss)
+        if: steps.cache-postgres-image.outputs.cache-hit != 'true'
         run: |
-          if [ ! -f /tmp/postgres-image.tar ]; then
-            docker pull postgres:17
-            docker save postgres:17 -o /tmp/postgres-17.tar
-          fi
+          docker pull postgres:17
+          docker save postgres:17 -o /tmp/postgres-17.tar
       - name: Load Postgres 17 (if cache hit)
+        if: steps.cache-postgres-image.outputs.cache-hit == 'true'
         run: |
-          if [ -f /tmp/postgres-17.tar ]; then
-            docker load -i /tmp/postgres-17.tar
-          fi
+          docker load -i /tmp/postgres-17.tar
       - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
+      - uses: taiki-e/install-action@cargo-nextest
+      - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo llvm-cov nextest
+      - name: Generate coverage report
+        run: cargo llvm-cov report --codecov --output-path coverage.json
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
