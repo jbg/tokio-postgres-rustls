@@ -29,3 +29,4 @@ rustls = { version = "0.23", default-features = false, features = [
   "tls12",
   "ring",
 ] }
+bollard = { version = "0.19.2" }
