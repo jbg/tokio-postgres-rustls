@@ -1,0 +1,33 @@
+name: Rust
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache Postgres Image
+        uses: actions/cache@v3
+        with:
+          path: /tmp/postgres-17.tar
+          key: postgres-17-${{ runner.os }}
+      - name: Pull Postgres 17 (if cache miss)
+        run: |
+          if [ ! -f /tmp/postgres-image.tar ]; then
+            docker pull postgres:17
+            docker save postgres:17 -o /tmp/postgres-17.tar
+          fi
+      - name: Load Postgres 17 (if cache hit)
+        run: |
+          if [ -f /tmp/postgres-17.tar ]; then
+            docker load -i /tmp/postgres-17.tar
+          fi
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --verbose
+      - name: Run tests
+        run: cargo test --verbose
