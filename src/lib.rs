@@ -17,7 +17,8 @@ mod private {
         task::{Context, Poll},
     };
 
-    use const_oid::db::{
+    use rustls::pki_types::ServerName;
+    use sha2::digest::const_oid::db::{
         rfc5912::{
             ECDSA_WITH_SHA_256, ECDSA_WITH_SHA_384, ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512,
             SHA_1_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION,
@@ -25,8 +26,7 @@ mod private {
         },
         rfc8410::ID_ED_25519,
     };
-    use ring::digest;
-    use rustls::pki_types::ServerName;
+    use sha2::{Digest, Sha256, Sha384, Sha512};
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_postgres::tls::{ChannelBinding, TlsConnect};
     use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -78,31 +78,32 @@ mod private {
         fn channel_binding(&self) -> ChannelBinding {
             let (_, session) = self.0.get_ref();
             match session.peer_certificates() {
-                Some(certs) if !certs.is_empty() => Certificate::from_der(&certs[0])
-                    .ok()
-                    .and_then(|cert| {
-                        let digest = match cert.signature_algorithm.oid {
+                Some(certs) if !certs.is_empty() => Certificate::from_der(&certs[0]).map_or_else(
+                    |_| ChannelBinding::none(),
+                    |cert| {
+                        match cert.signature_algorithm.oid {
                             // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
                             ID_SHA_1
                             | ID_SHA_256
                             | SHA_1_WITH_RSA_ENCRYPTION
                             | SHA_256_WITH_RSA_ENCRYPTION
-                            | ECDSA_WITH_SHA_256 => &digest::SHA256,
+                            | ECDSA_WITH_SHA_256 => ChannelBinding::tls_server_end_point(
+                                Sha256::digest(certs[0].as_ref()).to_vec(),
+                            ),
                             ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
-                                &digest::SHA384
+                                ChannelBinding::tls_server_end_point(
+                                    Sha384::digest(certs[0].as_ref()).to_vec(),
+                                )
                             }
                             ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => {
-                                &digest::SHA512
+                                ChannelBinding::tls_server_end_point(
+                                    Sha512::digest(certs[0].as_ref()).to_vec(),
+                                )
                             }
-                            _ => return None,
-                        };
-
-                        Some(digest)
-                    })
-                    .map_or_else(ChannelBinding::none, |algorithm| {
-                        let hash = digest::digest(algorithm, certs[0].as_ref());
-                        ChannelBinding::tls_server_end_point(hash.as_ref().into())
-                    }),
+                            _ => ChannelBinding::none(),
+                        }
+                    },
+                ),
                 _ => ChannelBinding::none(),
             }
         }

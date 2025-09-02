@@ -28,8 +28,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-nextest
       - uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Run tests
+      - name: Run tests w/ aws-lc-rs (default)
         run: cargo llvm-cov nextest --profile ci
+      - name: Run tests w/ ring (optional)
+        run: >
+          cargo llvm-cov nextest
+          --no-default-features
+          --features ring
       - name: Generate coverage report
         run: cargo llvm-cov report --codecov --output-path coverage.json
       - name: Upload test results to Codecov
