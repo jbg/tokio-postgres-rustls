@@ -1,8 +1,17 @@
 [package]
 name = "tokio-postgres-rustls"
 description = "Rustls integration for tokio-postgres"
-version = "0.13.0"
-authors = ["Jasper Hugo <jasper@jasperhugo.com>"]
+version = "0.14.0"
+authors = [
+  "Jasper Hugo <jasper@jasperhugo.com>",
+  "Dwayne Sykes <github-public@sykes.pw>",
+  "Aumetra Weisman <aumetra@cryptolab.net>",
+  "Conrad Ludgate <conradludgate@gmail.com>",
+  "Karsten Borgwaldt <kb@spambri.de>",
+  "Philip Dubé <philip@peerdb.io>",
+  "Michael Sowka <soilfiction@gmail.com>",
+  "ol <ol@teuto.net>",
+]
 repository = "https://github.com/jbg/tokio-postgres-rustls"
 edition = "2018"
 license = "MIT"
