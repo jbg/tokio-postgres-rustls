@@ -1,0 +1,48 @@
+name: Rust
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache Postgres Image
+        id: cache-postgres-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/postgres-17.tar
+          key: postgres-17-${{ runner.os }}
+      - name: Pull and Save Postgres 17 (if cache miss)
+        if: steps.cache-postgres-image.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17
+          docker save postgres:17 -o /tmp/postgres-17.tar
+      - name: Load Postgres 17 (if cache hit)
+        if: steps.cache-postgres-image.outputs.cache-hit == 'true'
+        run: |
+          docker load -i /tmp/postgres-17.tar
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-nextest
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run tests w/ aws-lc-rs (default)
+        run: cargo llvm-cov nextest --profile ci
+      - name: Run tests w/ ring (optional)
+        run: >
+          cargo llvm-cov nextest
+          --no-default-features
+          --features ring
+      - name: Generate coverage report
+        run: cargo llvm-cov report --codecov --output-path coverage.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
