@@ -30,7 +30,7 @@ mod private {
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_postgres::tls::{ChannelBinding, TlsConnect};
     use tokio_rustls::{client::TlsStream, TlsConnector};
-    use x509_cert::{der::Decode, TbsCertificate};
+    use x509_cert::{der::Decode, Certificate};
 
     pub struct TlsConnectFuture<S> {
         pub inner: tokio_rustls::Connect<S>,
@@ -91,10 +91,10 @@ mod private {
         fn channel_binding(&self) -> ChannelBinding {
             let (_, session) = self.0.get_ref();
             match session.peer_certificates() {
-                Some(certs) if !certs.is_empty() => TbsCertificate::from_der(&certs[0])
+                Some(certs) if !certs.is_empty() => Certificate::from_der(&certs[0])
                     .ok()
                     .and_then(|cert| {
-                        let digest = match cert.signature.oid {
+                        let digest = match cert.signature_algorithm.oid {
                             // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
                             ID_SHA_1
                             | ID_SHA_256
