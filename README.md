@@ -1,4 +1,5 @@
 # tokio-postgres-rustls
+
 This is an integration between the [rustls TLS stack](https://github.com/ctz/rustls)
 and the [tokio-postgres asynchronous PostgreSQL client library](https://github.com/sfackler/rust-postgres).
 
@@ -7,6 +8,16 @@ and the [tokio-postgres asynchronous PostgreSQL client library](https://github.c
 [API Documentation](https://docs.rs/tokio-postgres-rustls/)
 
 # Example
+
+Using default certs by enabling one of `webpki-roots` or `rustls-native-certs`:
+
+```
+let tls = tokio_postgres_rustls::MakeRustlsConnect::default();
+let connect_fut = tokio_postgres::connect("sslmode=require host=localhost user=postgres", tls);
+// ...
+```
+
+Or providing certs:
 
 ```
 let config = rustls::ClientConfig::builder()
@@ -18,4 +29,5 @@ let connect_fut = tokio_postgres::connect("sslmode=require host=localhost user=p
 ```
 
 # License
+
 tokio-postgres-rustls is distributed under the MIT license.

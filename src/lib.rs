@@ -3,19 +3,30 @@
 #![forbid(missing_docs, unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
 
+#[cfg(not(any(feature = "aws-lc-rs", feature = "ring")))]
+compile_error!("Either 'aws-lc-rs' or 'ring' feature must be enabled");
+
+#[cfg(all(feature = "aws-lc-rs", feature = "ring"))]
+compile_error!("Only one of 'aws-lc-rs' or 'ring' features can be enabled at a time");
+
 use std::{convert::TryFrom, sync::Arc};
 
-use rustls::{pki_types::ServerName, ClientConfig};
+use rustls::{ClientConfig, pki_types::ServerName};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_postgres::tls::MakeTlsConnect;
 
+#[cfg(feature = "aws-lc-rs")]
+use rustls::crypto::aws_lc_rs as crypto_provider;
+
+#[cfg(feature = "ring")]
+use rustls::crypto::ring as crypto_provider;
+
 mod private {
-    use std::{
-        future::Future,
-        io,
-        pin::Pin,
-        task::{Context, Poll},
-    };
+    #[cfg(feature = "aws-lc-rs")]
+    use aws_lc_rs::digest::{self as crypto_digest, SHA256, SHA384, SHA512};
+
+    #[cfg(feature = "ring")]
+    use ring::digest::{self as crypto_digest, SHA256, SHA384, SHA512};
 
     use const_oid::db::{
         rfc5912::{
@@ -25,12 +36,17 @@ mod private {
         },
         rfc8410::ID_ED_25519,
     };
-    use ring::digest;
     use rustls::pki_types::ServerName;
+    use std::{
+        future::Future,
+        io,
+        pin::Pin,
+        task::{Context, Poll},
+    };
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_postgres::tls::{ChannelBinding, TlsConnect};
-    use tokio_rustls::{client::TlsStream, TlsConnector};
-    use x509_cert::{der::Decode, Certificate};
+    use tokio_rustls::{TlsConnector, client::TlsStream};
+    use x509_cert::{Certificate, der::Decode};
 
     pub struct TlsConnectFuture<S> {
         inner: tokio_rustls::Connect<S>,
@@ -87,20 +103,18 @@ mod private {
                             | ID_SHA_256
                             | SHA_1_WITH_RSA_ENCRYPTION
                             | SHA_256_WITH_RSA_ENCRYPTION
-                            | ECDSA_WITH_SHA_256 => &digest::SHA256,
+                            | ECDSA_WITH_SHA_256 => &SHA256,
                             ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
-                                &digest::SHA384
+                                &SHA384
                             }
-                            ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => {
-                                &digest::SHA512
-                            }
+                            ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => &SHA512,
                             _ => return None,
                         };
 
                         Some(digest)
                     })
                     .map_or_else(ChannelBinding::none, |algorithm| {
-                        let hash = digest::digest(algorithm, certs[0].as_ref());
+                        let hash = crypto_digest::digest(algorithm, certs[0].as_ref());
                         ChannelBinding::tls_server_end_point(hash.as_ref().into())
                     }),
                 _ => ChannelBinding::none(),
@@ -167,6 +181,12 @@ impl MakeRustlsConnect {
     }
 }
 
+impl Default for MakeRustlsConnect {
+    fn default() -> Self {
+        Self::new(default_config())
+    }
+}
+
 impl<S> MakeTlsConnect<S> for MakeRustlsConnect
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -185,14 +205,43 @@ where
     }
 }
 
+fn default_config() -> rustls::ClientConfig {
+    let provider = crypto_provider::default_provider();
+
+    rustls::ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .expect("TLS versions supported by provider")
+        .with_root_certificates(root_certificates())
+        .with_no_client_auth()
+}
+
+fn root_certificates() -> rustls::RootCertStore {
+    #[allow(unused_mut)]
+    let mut roots = rustls::RootCertStore::empty();
+
+    #[cfg(feature = "webpki-roots")]
+    {
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    }
+
+    #[cfg(feature = "rustls-native-certs")]
+    {
+        let certs = rustls_native_certs::load_native_certs();
+        for cert in certs.certs {
+            let _ = roots.add(cert);
+        }
+    }
+
+    roots
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustls::pki_types::{CertificateDer, UnixTime};
     use rustls::{
-        client::danger::ServerCertVerifier,
-        client::danger::{HandshakeSignatureValid, ServerCertVerified},
         Error, SignatureScheme,
+        client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+        pki_types::{CertificateDer, UnixTime},
     };
 
     #[derive(Debug)]
