@@ -18,14 +18,12 @@ mod private {
         task::{Context, Poll},
     };
 
-    use const_oid::db::{
-        rfc5912::{
-            ECDSA_WITH_SHA_256, ECDSA_WITH_SHA_384, ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512,
-            SHA_1_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION,
-            SHA_512_WITH_RSA_ENCRYPTION,
-        },
-        rfc8410::ID_ED_25519,
+    use const_oid::db::rfc5912::{
+        ECDSA_WITH_SHA_256, ECDSA_WITH_SHA_384, ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512,
+        SHA_1_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION,
+        SHA_512_WITH_RSA_ENCRYPTION,
     };
+    use const_oid::ObjectIdentifier;
     use ring::digest;
     use rustls::pki_types::ServerName;
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -34,7 +32,7 @@ mod private {
     use x509_cert::{der::Decode, Certificate};
 
     pub enum TlsConnectFuture<S> {
-        Connect(tokio_rustls::Connect<S>),
+        Connect(Box<tokio_rustls::Connect<S>>),
         Error(Option<io::Error>),
     }
 
@@ -46,7 +44,7 @@ mod private {
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             match &mut *self {
-                Self::Connect(inner) => Pin::new(inner).poll(cx).map_ok(RustlsStream),
+                Self::Connect(inner) => Pin::new(inner.as_mut()).poll(cx).map_ok(RustlsStream),
                 Self::Error(error) => Poll::Ready(Err(error
                     .take()
                     .expect("TlsConnectFuture polled after completion"))),
@@ -72,7 +70,7 @@ mod private {
         fn connect(self, stream: S) -> Self::Future {
             match ServerName::try_from(self.0.hostname) {
                 Ok(hostname) => {
-                    TlsConnectFuture::Connect(self.0.connector.connect(hostname, stream))
+                    TlsConnectFuture::Connect(Box::new(self.0.connector.connect(hostname, stream)))
                 }
                 Err(error) => TlsConnectFuture::Error(Some(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -84,6 +82,24 @@ mod private {
 
     pub struct RustlsStream<S>(TlsStream<S>);
 
+    pub(super) fn channel_binding_digest(
+        signature_algorithm: ObjectIdentifier,
+    ) -> Option<&'static digest::Algorithm> {
+        match signature_algorithm {
+            // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
+            ID_SHA_1
+            | ID_SHA_256
+            | SHA_1_WITH_RSA_ENCRYPTION
+            | SHA_256_WITH_RSA_ENCRYPTION
+            | ECDSA_WITH_SHA_256 => Some(&digest::SHA256),
+            ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => Some(&digest::SHA384),
+            ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION => Some(&digest::SHA512),
+            // Unsupported algorithms, including pure signature algorithms like Ed25519, have no
+            // digest to use for tls-server-end-point channel binding.
+            _ => None,
+        }
+    }
+
     impl<S> tokio_postgres::tls::TlsStream for RustlsStream<S>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -93,25 +109,7 @@ mod private {
             match session.peer_certificates() {
                 Some(certs) if !certs.is_empty() => Certificate::from_der(&certs[0])
                     .ok()
-                    .and_then(|cert| {
-                        let digest = match cert.signature_algorithm.oid {
-                            // Note: SHA1 is upgraded to SHA256 as per https://datatracker.ietf.org/doc/html/rfc5929#section-4.1
-                            ID_SHA_1
-                            | ID_SHA_256
-                            | SHA_1_WITH_RSA_ENCRYPTION
-                            | SHA_256_WITH_RSA_ENCRYPTION
-                            | ECDSA_WITH_SHA_256 => &digest::SHA256,
-                            ID_SHA_384 | SHA_384_WITH_RSA_ENCRYPTION | ECDSA_WITH_SHA_384 => {
-                                &digest::SHA384
-                            }
-                            ID_SHA_512 | SHA_512_WITH_RSA_ENCRYPTION | ID_ED_25519 => {
-                                &digest::SHA512
-                            }
-                            _ => return None,
-                        };
-
-                        Some(digest)
-                    })
+                    .and_then(|cert| channel_binding_digest(cert.signature_algorithm.oid))
                     .map_or_else(ChannelBinding::none, |algorithm| {
                         let hash = digest::digest(algorithm, certs[0].as_ref());
                         ChannelBinding::tls_server_end_point(hash.as_ref().into())
@@ -199,6 +197,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use const_oid::db::{rfc5912::SHA_512_WITH_RSA_ENCRYPTION, rfc8410::ID_ED_25519};
     use rustls::pki_types::{CertificateDer, UnixTime};
     use rustls::{
         client::danger::ServerCertVerifier,
@@ -288,5 +287,18 @@ mod tests {
             );
 
         assert!(tls_connect.is_ok());
+    }
+
+    #[test]
+    fn ed25519_has_no_channel_binding_digest() {
+        assert!(private::channel_binding_digest(ID_ED_25519).is_none());
+    }
+
+    #[test]
+    fn sha512_with_rsa_has_channel_binding_digest() {
+        let algorithm = private::channel_binding_digest(SHA_512_WITH_RSA_ENCRYPTION)
+            .expect("SHA-512 signature algorithm should map to a digest");
+
+        assert_eq!(algorithm.output_len(), 64);
     }
 }
