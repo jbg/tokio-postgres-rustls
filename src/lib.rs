@@ -3,14 +3,15 @@
 #![forbid(missing_docs, unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
 
-use std::{convert::TryFrom, sync::Arc};
+use std::sync::Arc;
 
-use rustls::{pki_types::ServerName, ClientConfig};
+use rustls::ClientConfig;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_postgres::tls::MakeTlsConnect;
 
 mod private {
     use std::{
+        convert::TryFrom,
         future::Future,
         io,
         pin::Pin,
@@ -32,8 +33,9 @@ mod private {
     use tokio_rustls::{client::TlsStream, TlsConnector};
     use x509_cert::{der::Decode, Certificate};
 
-    pub struct TlsConnectFuture<S> {
-        inner: tokio_rustls::Connect<S>,
+    pub enum TlsConnectFuture<S> {
+        Connect(tokio_rustls::Connect<S>),
+        Error(Option<io::Error>),
     }
 
     impl<S> Future for TlsConnectFuture<S>
@@ -43,14 +45,19 @@ mod private {
         type Output = io::Result<RustlsStream<S>>;
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Pin::new(&mut self.inner).poll(cx).map_ok(RustlsStream)
+            match &mut *self {
+                Self::Connect(inner) => Pin::new(inner).poll(cx).map_ok(RustlsStream),
+                Self::Error(error) => Poll::Ready(Err(error
+                    .take()
+                    .expect("TlsConnectFuture polled after completion"))),
+            }
         }
     }
 
     pub struct RustlsConnect(pub RustlsConnectData);
 
     pub struct RustlsConnectData {
-        pub hostname: ServerName<'static>,
+        pub hostname: String,
         pub connector: TlsConnector,
     }
 
@@ -63,8 +70,14 @@ mod private {
         type Future = TlsConnectFuture<S>;
 
         fn connect(self, stream: S) -> Self::Future {
-            TlsConnectFuture {
-                inner: self.0.connector.connect(self.0.hostname, stream),
+            match ServerName::try_from(self.0.hostname) {
+                Ok(hostname) => {
+                    TlsConnectFuture::Connect(self.0.connector.connect(hostname, stream))
+                }
+                Err(error) => TlsConnectFuture::Error(Some(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    error,
+                ))),
             }
         }
     }
@@ -173,15 +186,13 @@ where
 {
     type Stream = private::RustlsStream<S>;
     type TlsConnect = private::RustlsConnect;
-    type Error = rustls::pki_types::InvalidDnsNameError;
+    type Error = std::convert::Infallible;
 
     fn make_tls_connect(&mut self, hostname: &str) -> Result<Self::TlsConnect, Self::Error> {
-        ServerName::try_from(hostname).map(|dns_name| {
-            private::RustlsConnect(private::RustlsConnectData {
-                hostname: dns_name.to_owned(),
-                connector: Arc::clone(&self.config).into(),
-            })
-        })
+        Ok(private::RustlsConnect(private::RustlsConnectData {
+            hostname: hostname.to_owned(),
+            connector: Arc::clone(&self.config).into(),
+        }))
     }
 }
 
@@ -192,8 +203,10 @@ mod tests {
     use rustls::{
         client::danger::ServerCertVerifier,
         client::danger::{HandshakeSignatureValid, ServerCertVerified},
+        pki_types::ServerName,
         Error, SignatureScheme,
     };
+    use tokio::io::DuplexStream;
 
     #[derive(Debug)]
     struct AcceptAllVerifier {}
@@ -259,5 +272,21 @@ mod tests {
         tokio::spawn(async move { conn.await.map_err(|e| panic!("{:?}", e)) });
         let stmt = client.prepare("SELECT 1").await.expect("prepare");
         let _ = client.query(&stmt, &[]).await.expect("query");
+    }
+
+    #[test]
+    fn accepts_unix_socket_hostname_before_tls_is_used() {
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+        let mut tls = super::MakeRustlsConnect::new(config);
+
+        let tls_connect =
+            <super::MakeRustlsConnect as MakeTlsConnect<DuplexStream>>::make_tls_connect(
+                &mut tls,
+                "/var/run/postgresql",
+            );
+
+        assert!(tls_connect.is_ok());
     }
 }
