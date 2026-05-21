@@ -8,14 +8,22 @@ edition = "2018"
 license = "MIT"
 readme = "README.md"
 
+[features]
+default = []
+aws-lc-rs = ["rustls/aws_lc_rs", "tokio-rustls/aws_lc_rs"]
+native-certs = ["dep:rustls-native-certs"]
+ring = ["rustls/ring", "tokio-rustls/ring"]
+webpki-roots = ["dep:webpki-roots"]
+
 [dependencies]
-const-oid = { version = "0.9.6", default-features = false, features = ["db"] }
-ring = { version = "0.17", default-features = false }
+rustls-native-certs = { version = "0.8", default-features = false, optional = true }
 rustls = { version = "0.23", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 tokio = { version = "1", default-features = false }
 tokio-postgres = { version = "0.7", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }
-x509-cert = { version = "0.2.5", default-features = false, features = ["std"] }
+webpki-roots = { version = "1", default-features = false, optional = true }
+x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 env_logger = { version = "0.11", default-features = false }
