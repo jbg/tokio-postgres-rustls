@@ -22,13 +22,13 @@ mod private {
     use sha2::{Digest, Sha256, Sha384, Sha512};
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_postgres::tls::{ChannelBinding, TlsConnect};
-    use tokio_rustls::{client::TlsStream, TlsConnector};
+    use tokio_rustls::{TlsConnector, client::TlsStream};
     use x509_cert::der::oid::db::rfc5912::{
         ECDSA_WITH_SHA_256, ECDSA_WITH_SHA_384, ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512,
         SHA_1_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION,
         SHA_512_WITH_RSA_ENCRYPTION,
     };
-    use x509_cert::{der::oid::ObjectIdentifier, der::Decode, Certificate};
+    use x509_cert::{Certificate, der::Decode, der::oid::ObjectIdentifier};
 
     pub enum TlsConnectFuture<S> {
         Connect(Box<tokio_rustls::Connect<S>>),
@@ -232,8 +232,8 @@ impl MakeRustlsConnect {
     /// certificate store. If no certificates could be loaded, returns the
     /// reported errors instead.
     #[cfg(feature = "native-certs")]
-    pub fn with_native_certs(
-    ) -> Result<(Self, Vec<rustls_native_certs::Error>), Vec<rustls_native_certs::Error>> {
+    pub fn with_native_certs()
+    -> Result<(Self, Vec<rustls_native_certs::Error>), Vec<rustls_native_certs::Error>> {
         let result = rustls_native_certs::load_native_certs();
         if !result.certs.is_empty() {
             let mut roots = rustls::RootCertStore::empty();
@@ -268,10 +268,10 @@ mod tests {
     use rustls::pki_types::{CertificateDer, UnixTime};
     #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
     use rustls::{
+        Error, SignatureScheme,
         client::danger::ServerCertVerifier,
         client::danger::{HandshakeSignatureValid, ServerCertVerified},
         pki_types::ServerName,
-        Error, SignatureScheme,
     };
     #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
     use tokio::io::DuplexStream;
@@ -359,7 +359,7 @@ mod tests {
         )
         .await
         .expect("connect");
-        tokio::spawn(async move { conn.await.map_err(|e| panic!("{:?}", e)) });
+        tokio::spawn(async move { conn.await.map_err(|e| panic!("{e:?}")) });
         let stmt = client.prepare("SELECT 1").await.expect("prepare");
         let _ = client.query(&stmt, &[]).await.expect("query");
     }

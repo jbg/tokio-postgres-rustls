@@ -28,8 +28,10 @@ webpki-roots = { version = "1", default-features = false, optional = true }
 x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+bollard = "0.19"
 env_logger = { version = "0.11", default-features = false }
-tokio = { version = "1", default-features = false, features = ["macros", "rt"] }
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "time"] }
 tokio-postgres = { version = "0.7", default-features = false, features = [
   "runtime",
 ] }
