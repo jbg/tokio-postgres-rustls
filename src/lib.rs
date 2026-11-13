@@ -135,7 +135,7 @@ mod private {
             match session.peer_certificates() {
                 Some(certs) if !certs.is_empty() => Certificate::from_der(&certs[0])
                     .ok()
-                    .and_then(|cert| channel_binding_digest(cert.signature_algorithm.oid))
+                    .and_then(|cert| channel_binding_digest(cert.signature_algorithm().oid))
                     .map_or_else(ChannelBinding::none, |algorithm| {
                         ChannelBinding::tls_server_end_point(algorithm.digest(certs[0].as_ref()))
                     }),
